@@ -28,4 +28,16 @@ export class DocumentStore implements IDocumentStore {
 
     @Column({ nullable: false, type: 'text' })
     status: DocumentStoreStatus
+
+    @Column({ nullable: true, type: 'text' })
+    vectorStoreConfig: string | null
+
+    @Column({ nullable: true, type: 'text' })
+    embeddingConfig: string | null
+
+    @Column({ nullable: true, type: 'text' })
+    recordManagerConfig: string | null
+
+    @Column({ nullable: true, type: 'text' })
+    workspaceId?: string
 }

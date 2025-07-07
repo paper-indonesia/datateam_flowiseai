@@ -1,9 +1,14 @@
 import { omit } from 'lodash'
 import { ICommonObject, IDocument, INode, INodeData, INodeParams } from '../../../src/Interface'
 import { TextSplitter } from 'langchain/text_splitter'
-import { Browser, Page, PlaywrightWebBaseLoader, PlaywrightWebBaseLoaderOptions } from 'langchain/document_loaders/web/playwright'
+import {
+    Browser,
+    Page,
+    PlaywrightWebBaseLoader,
+    PlaywrightWebBaseLoaderOptions
+} from '@langchain/community/document_loaders/web/playwright'
 import { test } from 'linkifyjs'
-import { webCrawl, xmlScrape } from '../../../src'
+import { handleEscapeCharacters, INodeOutputsValue, webCrawl, xmlScrape } from '../../../src'
 
 class Playwright_DocumentLoaders implements INode {
     label: string
@@ -15,11 +20,12 @@ class Playwright_DocumentLoaders implements INode {
     category: string
     baseClasses: string[]
     inputs: INodeParams[]
+    outputs: INodeOutputsValue[]
 
     constructor() {
         this.label = 'Playwright Web Scraper'
         this.name = 'playwrightWebScraper'
-        this.version = 1.0
+        this.version = 2.0
         this.type = 'Document'
         this.icon = 'playwright.svg'
         this.category = 'Document Loaders'
@@ -127,6 +133,20 @@ class Playwright_DocumentLoaders implements INode {
                 additionalParams: true
             }
         ]
+        this.outputs = [
+            {
+                label: 'Document',
+                name: 'document',
+                description: 'Array of document objects containing metadata and pageContent',
+                baseClasses: [...this.baseClasses, 'json']
+            },
+            {
+                label: 'Text',
+                name: 'text',
+                description: 'Concatenated string from pageContent of documents',
+                baseClasses: ['string', 'json']
+            }
+        ]
     }
 
     async init(nodeData: INodeData, _: string, options: ICommonObject): Promise<any> {
@@ -138,6 +158,8 @@ class Playwright_DocumentLoaders implements INode {
         let waitUntilGoToOption = nodeData.inputs?.waitUntilGoToOption as 'load' | 'domcontentloaded' | 'networkidle' | 'commit' | undefined
         let waitForSelector = nodeData.inputs?.waitForSelector as string
         const _omitMetadataKeys = nodeData.inputs?.omitMetadataKeys as string
+        const output = nodeData.outputs?.output as string
+        const orgId = options.orgId
 
         let omitMetadataKeys: string[] = []
         if (_omitMetadataKeys) {
@@ -174,19 +196,21 @@ class Playwright_DocumentLoaders implements INode {
                 }
                 const loader = new PlaywrightWebBaseLoader(url, config)
                 if (textSplitter) {
-                    docs = await loader.loadAndSplit(textSplitter)
+                    docs = await loader.load()
+                    docs = await textSplitter.splitDocuments(docs)
                 } else {
                     docs = await loader.load()
                 }
                 return docs
             } catch (err) {
-                if (process.env.DEBUG === 'true') options.logger.error(`error in PlaywrightWebBaseLoader: ${err.message}, on page: ${url}`)
+                if (process.env.DEBUG === 'true')
+                    options.logger.error(`[${orgId}]: Error in PlaywrightWebBaseLoader: ${err.message}, on page: ${url}`)
             }
         }
 
         let docs: IDocument[] = []
         if (relativeLinksMethod) {
-            if (process.env.DEBUG === 'true') options.logger.info(`Start ${relativeLinksMethod}`)
+            if (process.env.DEBUG === 'true') options.logger.info(`[${orgId}]: Start PlaywrightWebBaseLoader ${relativeLinksMethod}`)
             // if limit is 0 we don't want it to default to 10 so we check explicitly for null or undefined
             // so when limit is 0 we can fetch all the links
             if (limit === null || limit === undefined) limit = 10
@@ -197,15 +221,18 @@ class Playwright_DocumentLoaders implements INode {
                     : relativeLinksMethod === 'webCrawl'
                     ? await webCrawl(url, limit)
                     : await xmlScrape(url, limit)
-            if (process.env.DEBUG === 'true') options.logger.info(`pages: ${JSON.stringify(pages)}, length: ${pages.length}`)
+            if (process.env.DEBUG === 'true')
+                options.logger.info(`[${orgId}]: PlaywrightWebBaseLoader pages: ${JSON.stringify(pages)}, length: ${pages.length}`)
             if (!pages || pages.length === 0) throw new Error('No relative links found')
             for (const page of pages) {
                 docs.push(...(await playwrightLoader(page)))
             }
-            if (process.env.DEBUG === 'true') options.logger.info(`Finish ${relativeLinksMethod}`)
+            if (process.env.DEBUG === 'true') options.logger.info(`[${orgId}]: Finish PlaywrightWebBaseLoader ${relativeLinksMethod}`)
         } else if (selectedLinks && selectedLinks.length > 0) {
             if (process.env.DEBUG === 'true')
-                options.logger.info(`pages: ${JSON.stringify(selectedLinks)}, length: ${selectedLinks.length}`)
+                options.logger.info(
+                    `[${orgId}]: PlaywrightWebBaseLoader pages: ${JSON.stringify(selectedLinks)}, length: ${selectedLinks.length}`
+                )
             for (const page of selectedLinks.slice(0, limit)) {
                 docs.push(...(await playwrightLoader(page)))
             }
@@ -245,7 +272,15 @@ class Playwright_DocumentLoaders implements INode {
             }))
         }
 
-        return docs
+        if (output === 'document') {
+            return docs
+        } else {
+            let finaltext = ''
+            for (const doc of docs) {
+                finaltext += `${doc.pageContent}\n`
+            }
+            return handleEscapeCharacters(finaltext, false)
+        }
     }
 }
 

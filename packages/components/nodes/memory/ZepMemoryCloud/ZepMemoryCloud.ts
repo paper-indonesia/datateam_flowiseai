@@ -1,3 +1,7 @@
+import { ZepMemory, ZepMemoryInput } from '@getzep/zep-cloud/langchain'
+import { BaseMessage } from '@langchain/core/messages'
+import { InputValues, MemoryVariables, OutputValues } from 'langchain/memory'
+import { ICommonObject } from '../../../src'
 import { IMessage, INode, INodeData, INodeParams, MemoryMethods, MessageType } from '../../../src/Interface'
 import {
     convertBaseMessagetoIMessage,
@@ -6,11 +10,6 @@ import {
     getCredentialParam,
     mapChatMessageToBaseMessage
 } from '../../../src/utils'
-import { ZepMemory, ZepMemoryInput } from '@getzep/zep-cloud/langchain'
-
-import { ICommonObject } from '../../../src'
-import { InputValues, MemoryVariables, OutputValues } from 'langchain/memory'
-import { BaseMessage } from 'langchain/schema'
 
 class ZepMemoryCloud_Memory implements INode {
     label: string
@@ -114,6 +113,7 @@ const initializeZep = async (nodeData: INodeData, options: ICommonObject): Promi
 
     const credentialData = await getCredentialData(nodeData.credential ?? '', options)
     const apiKey = getCredentialParam('apiKey', credentialData, nodeData)
+    const orgId = options.orgId as string
     const obj: ZepMemoryInput & ZepMemoryExtendedInput = {
         apiKey,
         aiPrefix,
@@ -122,7 +122,8 @@ const initializeZep = async (nodeData: INodeData, options: ICommonObject): Promi
         sessionId,
         inputKey,
         memoryType: memoryType,
-        returnMessages: true
+        returnMessages: true,
+        orgId
     }
 
     return new ZepMemoryExtended(obj)
@@ -130,14 +131,17 @@ const initializeZep = async (nodeData: INodeData, options: ICommonObject): Promi
 
 interface ZepMemoryExtendedInput {
     memoryType?: 'perpetual' | 'message_window'
+    orgId: string
 }
 
 class ZepMemoryExtended extends ZepMemory implements MemoryMethods {
     memoryType: 'perpetual' | 'message_window'
+    orgId: string
 
     constructor(fields: ZepMemoryInput & ZepMemoryExtendedInput) {
         super(fields)
         this.memoryType = fields.memoryType ?? 'perpetual'
+        this.orgId = fields.orgId
     }
 
     async loadMemoryVariables(values: InputValues, overrideSessionId = ''): Promise<MemoryVariables> {
@@ -170,7 +174,7 @@ class ZepMemoryExtended extends ZepMemory implements MemoryMethods {
         const memoryVariables = await this.loadMemoryVariables({}, id)
         const baseMessages = memoryVariables[this.memoryKey]
         if (prependMessages?.length) {
-            baseMessages.unshift(...mapChatMessageToBaseMessage(prependMessages))
+            baseMessages.unshift(...(await mapChatMessageToBaseMessage(prependMessages, this.orgId)))
         }
         return returnBaseMessages ? baseMessages : convertBaseMessagetoIMessage(baseMessages)
     }

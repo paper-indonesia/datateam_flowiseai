@@ -27,14 +27,16 @@ import { useTheme, styled } from '@mui/material/styles'
 
 // project imports
 import MainCard from '@/ui-component/cards/MainCard'
-import { StyledButton } from '@/ui-component/button/StyledButton'
 import APIKeyDialog from './APIKeyDialog'
 import ConfirmDialog from '@/ui-component/dialog/ConfirmDialog'
 import ViewHeader from '@/layout/MainLayout/ViewHeader'
 import ErrorBoundary from '@/ErrorBoundary'
+import { PermissionButton, StyledPermissionButton } from '@/ui-component/button/RBACButtons'
+import { Available } from '@/ui-component/rbac/available'
 
 // API
 import apiKeyApi from '@/api/apikey'
+import { useError } from '@/store/context/ErrorContext'
 
 // Hooks
 import useApi from '@/hooks/useApi'
@@ -44,8 +46,20 @@ import useConfirm from '@/hooks/useConfirm'
 import useNotifier from '@/utils/useNotifier'
 
 // Icons
-import { IconTrash, IconEdit, IconCopy, IconChevronsUp, IconChevronsDown, IconX, IconPlus, IconEye, IconEyeOff } from '@tabler/icons-react'
+import {
+    IconTrash,
+    IconEdit,
+    IconCopy,
+    IconChevronsUp,
+    IconChevronsDown,
+    IconX,
+    IconPlus,
+    IconEye,
+    IconEyeOff,
+    IconFileUpload
+} from '@tabler/icons-react'
 import APIEmptySVG from '@/assets/images/api_empty.svg'
+import UploadJSONFileDialog from '@/views/apikey/UploadJSONFileDialog'
 
 // ==============================|| APIKey ||============================== //
 
@@ -118,16 +132,20 @@ function APIKeyRow(props) {
                     )}
                 </StyledTableCell>
                 <StyledTableCell>{moment(props.apiKey.createdAt).format('MMMM Do, YYYY')}</StyledTableCell>
-                <StyledTableCell>
-                    <IconButton title='Edit' color='primary' onClick={props.onEditClick}>
-                        <IconEdit />
-                    </IconButton>
-                </StyledTableCell>
-                <StyledTableCell>
-                    <IconButton title='Delete' color='error' onClick={props.onDeleteClick}>
-                        <IconTrash />
-                    </IconButton>
-                </StyledTableCell>
+                <Available permission={'apikeys:update,apikeys:create'}>
+                    <StyledTableCell>
+                        <IconButton title='Edit' color='primary' onClick={props.onEditClick}>
+                            <IconEdit />
+                        </IconButton>
+                    </StyledTableCell>
+                </Available>
+                <Available permission={'apikeys:delete'}>
+                    <StyledTableCell>
+                        <IconButton title='Delete' color='error' onClick={props.onDeleteClick}>
+                            <IconTrash />
+                        </IconButton>
+                    </StyledTableCell>
+                </Available>
             </TableRow>
             {open && (
                 <TableRow sx={{ '& td': { border: 0 } }}>
@@ -187,18 +205,21 @@ const APIKey = () => {
 
     const dispatch = useDispatch()
     useNotifier()
+    const { error, setError } = useError()
 
     const enqueueSnackbar = (...args) => dispatch(enqueueSnackbarAction(...args))
     const closeSnackbar = (...args) => dispatch(closeSnackbarAction(...args))
 
     const [isLoading, setLoading] = useState(true)
-    const [error, setError] = useState(null)
     const [showDialog, setShowDialog] = useState(false)
     const [dialogProps, setDialogProps] = useState({})
     const [apiKeys, setAPIKeys] = useState([])
     const [anchorEl, setAnchorEl] = useState(null)
     const [showApiKeys, setShowApiKeys] = useState([])
     const openPopOver = Boolean(anchorEl)
+
+    const [showUploadDialog, setShowUploadDialog] = useState(false)
+    const [uploadDialogProps, setUploadDialogProps] = useState({})
 
     const [search, setSearch] = useState('')
     const onSearchChange = (event) => {
@@ -252,6 +273,17 @@ const APIKey = () => {
         }
         setDialogProps(dialogProp)
         setShowDialog(true)
+    }
+
+    const uploadDialog = () => {
+        const dialogProp = {
+            type: 'ADD',
+            cancelButtonName: 'Cancel',
+            confirmButtonName: 'Upload',
+            data: {}
+        }
+        setUploadDialogProps(dialogProp)
+        setShowUploadDialog(true)
     }
 
     const deleteKey = async (key) => {
@@ -308,6 +340,7 @@ const APIKey = () => {
 
     const onConfirm = () => {
         setShowDialog(false)
+        setShowUploadDialog(false)
         getAllAPIKeysApi.request()
     }
 
@@ -327,12 +360,6 @@ const APIKey = () => {
         }
     }, [getAllAPIKeysApi.data])
 
-    useEffect(() => {
-        if (getAllAPIKeysApi.error) {
-            setError(getAllAPIKeysApi.error)
-        }
-    }, [getAllAPIKeysApi.error])
-
     return (
         <>
             <MainCard>
@@ -340,8 +367,25 @@ const APIKey = () => {
                     <ErrorBoundary error={error} />
                 ) : (
                     <Stack flexDirection='column' sx={{ gap: 3 }}>
-                        <ViewHeader onSearchChange={onSearchChange} search={true} searchPlaceholder='Search API Keys' title='API Keys'>
-                            <StyledButton
+                        <ViewHeader
+                            onSearchChange={onSearchChange}
+                            search={true}
+                            searchPlaceholder='Search API Keys'
+                            title='API Keys'
+                            description='Flowise API & SDK authentication keys'
+                        >
+                            <PermissionButton
+                                permissionId={'apikeys:import'}
+                                variant='outlined'
+                                sx={{ borderRadius: 2, height: '100%' }}
+                                onClick={uploadDialog}
+                                startIcon={<IconFileUpload />}
+                                id='btn_importApiKeys'
+                            >
+                                Import
+                            </PermissionButton>
+                            <StyledPermissionButton
+                                permissionId={'apikeys:create'}
                                 variant='contained'
                                 sx={{ borderRadius: 2, height: '100%' }}
                                 onClick={addNew}
@@ -349,7 +393,7 @@ const APIKey = () => {
                                 id='btn_createApiKey'
                             >
                                 Create Key
-                            </StyledButton>
+                            </StyledPermissionButton>
                         </ViewHeader>
                         {!isLoading && apiKeys.length <= 0 ? (
                             <Stack sx={{ alignItems: 'center', justifyContent: 'center' }} flexDirection='column'>
@@ -380,9 +424,13 @@ const APIKey = () => {
                                             <StyledTableCell>Key Name</StyledTableCell>
                                             <StyledTableCell>API Key</StyledTableCell>
                                             <StyledTableCell>Usage</StyledTableCell>
-                                            <StyledTableCell>Created</StyledTableCell>
-                                            <StyledTableCell> </StyledTableCell>
-                                            <StyledTableCell> </StyledTableCell>
+                                            <StyledTableCell>Updated</StyledTableCell>
+                                            <Available permission={'apikeys:update,apikeys:create'}>
+                                                <StyledTableCell> </StyledTableCell>
+                                            </Available>
+                                            <Available permission={'apikeys:delete'}>
+                                                <StyledTableCell> </StyledTableCell>
+                                            </Available>
                                         </TableRow>
                                     </TableHead>
                                     <TableBody>
@@ -401,12 +449,12 @@ const APIKey = () => {
                                                     <StyledTableCell>
                                                         <Skeleton variant='text' />
                                                     </StyledTableCell>
-                                                    <StyledTableCell>
-                                                        <Skeleton variant='text' />
-                                                    </StyledTableCell>
-                                                    <StyledTableCell>
-                                                        <Skeleton variant='text' />
-                                                    </StyledTableCell>
+                                                    <Available permission={'apikeys:update,apikeys:create'}>
+                                                        <StyledTableCell> </StyledTableCell>
+                                                    </Available>
+                                                    <Available permission={'apikeys:delete'}>
+                                                        <StyledTableCell> </StyledTableCell>
+                                                    </Available>
                                                 </StyledTableRow>
                                                 <StyledTableRow>
                                                     <StyledTableCell>
@@ -421,12 +469,12 @@ const APIKey = () => {
                                                     <StyledTableCell>
                                                         <Skeleton variant='text' />
                                                     </StyledTableCell>
-                                                    <StyledTableCell>
-                                                        <Skeleton variant='text' />
-                                                    </StyledTableCell>
-                                                    <StyledTableCell>
-                                                        <Skeleton variant='text' />
-                                                    </StyledTableCell>
+                                                    <Available permission={'apikeys:update,apikeys:create'}>
+                                                        <StyledTableCell> </StyledTableCell>
+                                                    </Available>
+                                                    <Available permission={'apikeys:delete'}>
+                                                        <StyledTableCell> </StyledTableCell>
+                                                    </Available>
                                                 </StyledTableRow>
                                             </>
                                         ) : (
@@ -468,6 +516,14 @@ const APIKey = () => {
                 onConfirm={onConfirm}
                 setError={setError}
             ></APIKeyDialog>
+            {showUploadDialog && (
+                <UploadJSONFileDialog
+                    show={showUploadDialog}
+                    dialogProps={uploadDialogProps}
+                    onCancel={() => setShowUploadDialog(false)}
+                    onConfirm={onConfirm}
+                ></UploadJSONFileDialog>
+            )}
             <ConfirmDialog />
         </>
     )
